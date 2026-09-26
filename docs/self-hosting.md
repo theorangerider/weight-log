@@ -55,13 +55,15 @@ All settings are environment variables.
 | `HOST` | `127.0.0.1` | Address to listen on. Use `0.0.0.0` in a container, or a specific IP. |
 | `PORT` | `8080` | Port to listen on. |
 | `DATABASE_PATH` | `data/weight-log.sqlite` (in the repo) | SQLite file. Created if missing, along with its directory. |
+| `AUTH` | `accounts` | `accounts`: normal email and password sign-in, like Cloudflare. `none`: single-user, no sign-in (see below). |
 | `ALLOW_REGISTRATION` | `false` | Allow "Create account" in the browser. Off by default. |
 | `COOKIE_SECURE` | `false` | Keep the `Secure` flag on the session cookie. Set `true` only if users reach the app over HTTPS. |
-| `ALLOWED_HOSTS` | *(any)* | Comma-separated host names the server answers to. Others get 403. |
+| `ALLOWED_HOSTS` | *(any)*; with `AUTH=none`: `localhost,127.0.0.1,[::1]` | Comma-separated host names the server answers to. Others get 403. |
+| `OWNER_EMAIL` | `owner@weight-log.local` | With `AUTH=none`: the email given to the single account when it is first created. |
 
 ## Authentication
 
-Sign-in behaves exactly as on Cloudflare:
+**`AUTH=accounts` (default).** This behaves exactly as on Cloudflare:
 PBKDF2-hashed passwords, 180-day sessions, and an Origin check on writes. Two
 differences, both deliberate:
 
@@ -73,6 +75,28 @@ differences, both deliberate:
   localhost, so sign-in at `http://nas:8080` would otherwise silently fail.
   Tailscale already encrypts traffic between your devices. If you put HTTPS in
   front (for example `tailscale serve`), set `COOKIE_SECURE=true`.
+
+**`AUTH=none` (single user).** There is no sign-in screen. Every request acts
+as the one account in the database, which is created automatically if the
+database is empty. Use this only where the network itself is the access
+control, such as a Tailscale tailnet or a trusted LAN:
+
+- Anyone who can reach the port can read, change, delete and export
+  everything.
+- `ALLOWED_HOSTS` must list the names you use in the browser, for example
+  `nas.your-tailnet.ts.net,100.101.102.103`. Without it, a malicious web page
+  could use DNS rebinding to reach the server from your own browser.
+- "Sign out" does nothing useful; reload the page.
+- The server refuses to start in this mode if the database has more than one
+  account.
+
+**Switching from `AUTH=none` to accounts later** needs no data migration. The
+single account is an ordinary account with no password yet:
+
+```bash
+node server/cli.js reset-password owner@weight-log.local   # set a password
+# then run with AUTH=accounts; add people with create-user
+```
 
 ## Admin CLI
 

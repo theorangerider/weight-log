@@ -6,16 +6,21 @@ import { resolve } from "node:path";
 const DEFAULT_DB = fileURLToPath(new URL("../data/weight-log.sqlite", import.meta.url));
 
 export function loadConfig(env = process.env) {
+  const auth = env.AUTH || "accounts";
+  if (auth !== "accounts" && auth !== "none") throw new Error(`AUTH must be "accounts" or "none", not "${auth}"`);
   const port = Number(env.PORT || 8080);
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error(`Invalid PORT "${env.PORT}"`);
   return {
     host: env.HOST || "127.0.0.1",
     port,
     databasePath: resolve(env.DATABASE_PATH || DEFAULT_DB),
+    auth,
+    ownerEmail: (env.OWNER_EMAIL || "owner@weight-log.local").trim().toLowerCase(),
     allowRegistration: bool(env, "ALLOW_REGISTRATION", false),
     cookieSecure: bool(env, "COOKIE_SECURE", false),
-    // Host names (no port) the server answers to; null = any.
-    allowedHosts: list(env.ALLOWED_HOSTS),
+    // Host names (no port) the server answers to. Defaults to loopback only
+    // when AUTH=none, since then a DNS-rebinding page could otherwise reach it.
+    allowedHosts: list(env.ALLOWED_HOSTS) ?? (auth === "none" ? ["localhost", "127.0.0.1", "[::1]"] : null),
   };
 }
 

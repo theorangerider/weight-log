@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import worker from "../src/index.js";
 import { loadConfig } from "./config.js";
 import { openDatabase } from "./database.js";
+import { ensureOwner } from "./auth.js";
 import { createHandler } from "./server.js";
 
 const PUBLIC_DIR = fileURLToPath(new URL("../public", import.meta.url));
@@ -12,14 +13,16 @@ const PUBLIC_DIR = fileURLToPath(new URL("../public", import.meta.url));
 export async function start(config, { log = console.log } = {}) {
   const sqlite = openDatabase(config.databasePath, { log });
   try {
-    const server = http.createServer(createHandler({ worker, sqlite, config, publicDir: PUBLIC_DIR, log }));
+    const owner = config.auth === "none" ? ensureOwner(sqlite, config.ownerEmail, log) : null;
+    const server = http.createServer(createHandler({ worker, sqlite, config, publicDir: PUBLIC_DIR, owner, log }));
     await new Promise((resolve, reject) => {
       server.once("error", reject);
       server.listen(config.port, config.host, resolve);
     });
     const { port } = server.address();
     log(`Weight Log listening on http://${config.host.includes(":") ? `[${config.host}]` : config.host}:${port}`);
-    log(`Database ${config.databasePath}; registration ${config.allowRegistration ? "open" : "disabled"}` +
+    log(`Database ${config.databasePath}; auth=${config.auth}` +
+      (config.auth === "none" ? ` (as ${owner.email})` : `; registration ${config.allowRegistration ? "open" : "disabled"}`) +
       (config.allowedHosts ? `; allowed hosts: ${config.allowedHosts.join(", ")}` : ""));
 
     const stop = () => new Promise((resolve) => {

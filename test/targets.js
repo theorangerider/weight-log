@@ -40,6 +40,8 @@ export async function startNode(overrides = {}) {
     host: "127.0.0.1",
     port: 0,
     databasePath: join(dir, "weight-log.sqlite"),
+    auth: "accounts",
+    ownerEmail: "owner@weight-log.local",
     allowRegistration: true,
     cookieSecure: true,
     allowedHosts: null,

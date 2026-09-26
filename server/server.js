@@ -4,11 +4,12 @@
 // supplies env.DB as a D1-compatible wrapper around SQLite.
 //
 // Self-hosting-only behavior lives here, not in the Worker:
-//   /healthz, ALLOWED_HOSTS, ALLOW_REGISTRATION, COOKIE_SECURE.
+//   /healthz, ALLOWED_HOSTS, ALLOW_REGISTRATION, COOKIE_SECURE, AUTH=none.
 import { timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize, sep } from "node:path";
 import { D1Database } from "./d1-sqlite.js";
+import { createSession, sessionIsValid } from "./auth.js";
 
 // src/index.js uses crypto.subtle.timingSafeEqual, a Cloudflare Workers
 // extension; Node has the same primitive in node:crypto.
@@ -26,9 +27,10 @@ const MIME = {
   ".txt": "text/plain; charset=utf-8",
 };
 
-export function createHandler({ worker, sqlite, config, publicDir, log = console.log }) {
+export function createHandler({ worker, sqlite, config, publicDir, owner = null, log = console.log }) {
   const env = { DB: new D1Database(sqlite) };
   const ctx = { waitUntil() {}, passThroughOnException() {} };
+  let ownerToken = null;
 
   return async function handle(req, res) {
     try {
@@ -56,9 +58,14 @@ export function createHandler({ worker, sqlite, config, publicDir, log = console
       for (const [name, value] of Object.entries(req.headers)) {
         headers.set(name, Array.isArray(value) ? value.join(", ") : value);
       }
+      if (owner) {
+        // Single-user mode: every request is signed in as the owner.
+        if (!ownerToken || !sessionIsValid(sqlite, ownerToken)) ownerToken = createSession(sqlite, owner.id);
+        headers.set("cookie", `session=${ownerToken}`);
+      }
       const body = req.method === "GET" || req.method === "HEAD" ? undefined : await readBody(req);
       const request = new Request(new URL(req.url, base), { method: req.method, headers, body });
-      await sendResponse(req, res, await worker.fetch(request, env, ctx), { config });
+      await sendResponse(req, res, await worker.fetch(request, env, ctx), { config, owner });
     } catch (err) {
       if (err.status === 413) return sendJSON(res, 413, { error: "Request too large" });
       log(JSON.stringify({ event: "server_error", url: req.url, message: err.message }));
@@ -79,7 +86,7 @@ async function readBody(req) {
   return Buffer.concat(chunks);
 }
 
-async function sendResponse(req, res, response, { config }) {
+async function sendResponse(req, res, response, { config, owner }) {
   const headers = {};
   response.headers.forEach((value, name) => {
     if (name !== "set-cookie") headers[name] = value;
@@ -89,6 +96,7 @@ async function sendResponse(req, res, response, { config }) {
   // so over http://nas:8080 sign-in would silently fail. Keep Secure only when
   // served over HTTPS (e.g. behind `tailscale serve`).
   if (!config.cookieSecure) cookies = cookies.map((c) => c.replace(/;\s*Secure(?=;|$)/i, ""));
+  if (owner) cookies = [];
   if (cookies.length) headers["set-cookie"] = cookies;
 
   const body = Buffer.from(await response.arrayBuffer());

@@ -214,6 +214,65 @@ describe("HTTP server", () => {
       await app.stop();
     }
   });
+  test("AUTH=none signs every request in as the single owner, and can switch back to accounts", async () => {
+    const app = await startNode({ auth: "none", allowRegistration: false, cookieSecure: false, allowedHosts: ["127.0.0.1"] });
+    const dbPath = join(app.dir, "weight-log.sqlite");
+    try {
+      const me = await app.fetch("/api/me");
+      assert.equal(me.status, 200);
+      assert.equal(me.headers.get("set-cookie"), null);
+      const profile = await me.json();
+      assert.deepEqual([profile.email, profile.unit], ["owner@weight-log.local", "lb"]);
+      assert.equal((await app.fetch("/api/weight", { method: "PUT", body: JSON.stringify({ date: "2024-01-01", weight: 180 }) })).status, 200);
+      // "Sign out" deletes the session; the next request just gets a new one.
+      await app.fetch("/api/logout", { method: "POST" });
+      assert.equal((await (await app.fetch("/api/weights")).json()).weights.length, 1);
+      // No password sign-in and no registration in this mode.
+      assert.equal((await app.fetch("/api/login", { method: "POST", body: JSON.stringify({ email: "owner@weight-log.local", password: "" }) })).status, 401);
+      assert.equal((await register(app)).status, 403);
+    } finally {
+      await app.stop({ keep: true });
+    }
+
+    // Later: give the owner a password and run in accounts mode — same data.
+    await cli(dbPath, ["reset-password", "owner@weight-log.local"], { WEIGHT_LOG_PASSWORD: "new password" });
+    const { start } = await import("../server/main.js");
+    const accounts = await start(loadConfig({ PORT: "0", DATABASE_PATH: dbPath }), quiet);
+    try {
+      const base = `http://127.0.0.1:${accounts.port}`;
+      assert.equal((await fetch(`${base}/api/me`)).status, 401);
+      const login = await fetch(`${base}/api/login`, { method: "POST", body: JSON.stringify({ email: "owner@weight-log.local", password: "new password" }) });
+      assert.equal(login.status, 200);
+      const cookie = login.headers.get("set-cookie").split(";")[0];
+      const { weights } = await (await fetch(`${base}/api/weights`, { headers: { Cookie: cookie } })).json();
+      assert.deepEqual(weights.map((e) => [e.date, e.weight]), [["2024-01-01", 180]]);
+    } finally {
+      await accounts.stop();
+    }
+  });
+
+  test("AUTH=none uses an existing single account whatever its email", async () => {
+    const app = await startNode();
+    await register(app, "me@example.com");
+    const dbPath = join(app.dir, "weight-log.sqlite");
+    await app.stop({ keep: true });
+    const single = await startNode({ databasePath: dbPath, auth: "none", allowedHosts: ["127.0.0.1"] });
+    try {
+      assert.equal((await (await single.fetch("/api/me")).json()).email, "me@example.com");
+    } finally {
+      await single.stop();
+    }
+  });
+
+  test("AUTH=none refuses a database with several accounts", async () => {
+    const app = await startNode();
+    await register(app, "a@example.com");
+    await register(app, "b@example.com");
+    const dbPath = join(app.dir, "weight-log.sqlite");
+    await app.stop({ keep: true });
+    const { start } = await import("../server/main.js");
+    await assert.rejects(start(loadConfig({ PORT: "0", DATABASE_PATH: dbPath, AUTH: "none" }), quiet), /single account/);
+  });
 });
 
 describe("CLI", () => {
@@ -295,11 +354,13 @@ describe("process", () => {
 
   test("config parsing", () => {
     assert.deepEqual(
-      (({ host, port, allowRegistration, cookieSecure, allowedHosts }) => ({ host, port, allowRegistration, cookieSecure, allowedHosts }))(loadConfig({})),
-      { host: "127.0.0.1", port: 8080, allowRegistration: false, cookieSecure: false, allowedHosts: null }
+      (({ host, port, auth, allowRegistration, cookieSecure, allowedHosts }) => ({ host, port, auth, allowRegistration, cookieSecure, allowedHosts }))(loadConfig({})),
+      { host: "127.0.0.1", port: 8080, auth: "accounts", allowRegistration: false, cookieSecure: false, allowedHosts: null }
     );
+    assert.deepEqual(loadConfig({ AUTH: "none" }).allowedHosts, ["localhost", "127.0.0.1", "[::1]"]);
     assert.deepEqual(loadConfig({ ALLOWED_HOSTS: " NAS.example.ts.net, 100.64.0.1 " }).allowedHosts, ["nas.example.ts.net", "100.64.0.1"]);
     assert.throws(() => loadConfig({ ALLOW_REGISTRATION: "maybe" }), /true or false/);
+    assert.throws(() => loadConfig({ AUTH: "ldap" }), /AUTH must be/);
     assert.throws(() => loadConfig({ PORT: "http" }), /Invalid PORT/);
   });
 });
