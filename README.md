@@ -85,6 +85,9 @@ npx wrangler deploy
 npm test
 ```
 
+Self-hosting on Node.js + SQLite instead of Cloudflare: see
+[docs/self-hosting.md](docs/self-hosting.md).
+
 Schema: [schema.sql](schema.sql) is the full schema for a fresh database.
 Changes to the live database go in [migrations/](migrations/) and are
 applied once, in order:

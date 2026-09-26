@@ -7,6 +7,9 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
+    "dev:node": "ALLOW_REGISTRATION=true node --watch server/main.js",
+    "start": "node server/main.js",
+    "user": "node server/cli.js",
     "test": "node --test test/*.test.js"
   },
   "devDependencies": {
