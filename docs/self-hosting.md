@@ -117,6 +117,129 @@ Password reset by email is Cloudflare-only: it needs a Resend API key
 (`RESEND_API_KEY`, `MAIL_FROM`), which the Node server doesn't use, so the
 sign-in page doesn't offer it. Use `reset-password` instead.
 
+## Running in a container
+
+`Dockerfile` and `compose.yaml` work with Docker Compose (v2.24+) and with
+rootless Podman via `podman-compose`. Everything below was run with Podman
+5.4 and podman-compose 1.3; with Docker Compose 2.26 the file was only
+validated (`docker compose config`), not run.
+
+```bash
+docker compose up --build        # or: podman-compose up --build
+# open http://127.0.0.1:8080
+```
+
+(`podman compose` without the hyphen runs the Docker compose plugin if it is
+installed, which needs a Docker-compatible socket; call `podman-compose`
+directly.)
+
+### Trying it out locally (Podman)
+
+From the repository root:
+
+```bash
+printf 'AUTH=none\n' > .env     # single user, no sign-in; omit for accounts mode
+podman-compose up --build -d    # then open http://127.0.0.1:8080
+podman-compose logs -f          # Ctrl-C stops following, not the app
+```
+
+Things to try:
+
+- **Import CSV**, using a Hacker's Diet Online export, then page back
+  through the months (◀) and compare the trend line, floaters and sinkers.
+- **Export CSV**.
+- A backup:
+  `podman exec weight-log_weight-log_1 node server/cli.js backup /data/backups`
+- Persistence: `podman-compose down`, then `podman-compose up -d`. The data
+  is still there, because it lives in the named volume, not the container.
+- Accounts mode: `rm .env`, then `podman-compose down && podman-compose up -d`.
+  The single-user account becomes an ordinary account without a password;
+  give it one with
+  `podman exec -it weight-log_weight-log_1 node server/cli.js reset-password <email>`.
+
+Clean up:
+
+```bash
+podman-compose down
+podman volume rm weight-log_weight-log-data   # deletes the test data
+rm -f .env
+```
+
+The image contains only Node 24 (Alpine) and the app's source files. There is
+no `npm install`. It runs as the unprivileged `node` user, has a healthcheck
+on `/healthz` (in both the Dockerfile and `compose.yaml`, since Podman ignores
+the Dockerfile one), and shuts down cleanly on SIGTERM.
+
+**Data.** Everything persistent is in `/data` inside the container
+(`/data/weight-log.sqlite`), and `/data` is always a volume. Removing,
+recreating or upgrading the container, or rebuilding the image, doesn't touch
+it. Only removing the volume itself (`docker compose down -v`,
+`podman volume rm`) deletes a named volume, so don't use `-v`.
+
+**Settings: one env file.** Compose reads `.env` next to `compose.yaml`
+(git-ignored), or the file named by `WEIGHT_LOG_ENV_FILE`. With no file, the
+defaults apply. The same file holds:
+
+- the container settings below, and
+- app settings, which are passed into the container: `AUTH`,
+  `ALLOW_REGISTRATION`, `COOKIE_SECURE`, `ALLOWED_HOSTS`, `OWNER_EMAIL`.
+  Leave `HOST`, `PORT` and `DATABASE_PATH` alone; the image sets them.
+
+For example, to try single-user mode locally:
+
+```bash
+printf 'AUTH=none\n' > .env && docker compose up -d
+```
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `WEIGHT_LOG_BIND` | `127.0.0.1` | Host address the port is published on. |
+| `WEIGHT_LOG_PORT` | `8080` | Host port. |
+| `WEIGHT_LOG_DATA` | named volume `weight-log_weight-log-data` | Host directory to bind-mount as `/data` instead. |
+| `WEIGHT_LOG_UID` / `WEIGHT_LOG_GID` | `1000` | User the app runs as inside the container. See below. |
+| `WEIGHT_LOG_IMAGE` | `weight-log:local` | Image name and tag to build or run. |
+| `WEIGHT_LOG_ENV_FILE` | `.env` | Env file passed to the container. Set it (in the shell, or in the file given to `--env-file`) when the file isn't `.env`. |
+
+**Bind-mount ownership.** The data directory must be writable by the
+container's user:
+
+- **Docker, or rootful Podman:** `chown 1000:1000` the directory, or set
+  `WEIGHT_LOG_UID/GID` to its owner.
+- **Rootless Podman:** container user 1000 maps to an unrelated host ID, so
+  it can't write to your directory, and the app refuses to start ("unable to
+  open database file"). Set `WEIGHT_LOG_UID=0` and `WEIGHT_LOG_GID=0`. In
+  rootless Podman, the container's root *is* your own unprivileged host user,
+  so files are owned by you.
+
+**Admin commands** run inside the container:
+
+```bash
+docker compose exec weight-log node server/cli.js create-user you@example.com
+docker compose exec weight-log node server/cli.js backup /data/backups
+docker compose exec -T weight-log node server/cli.js export-csv you@example.com > weight-log.csv
+```
+
+With Podman, use `podman exec -it weight-log_weight-log_1 ...`, or
+`podman-compose exec`.
+
+**Using a registry later.** The image is self-contained, so you can build it
+anywhere (a workstation, CI), push it, and set `WEIGHT_LOG_IMAGE` to the
+registry name. Then use `pull` and `up -d` instead of `--build`. Nothing else
+changes.
+
+**Tailscale / LAN access.** Tailscale runs on the host, not in the container.
+Publish the port on the host's Tailscale IP (`WEIGHT_LOG_BIND=100.x.y.z`) so
+only your tailnet can reach it, or on `0.0.0.0` for the LAN too. Binding to
+the Tailscale IP fails if the container starts before Tailscale is up at
+boot. If that happens, restart the container once Tailscale is running, or
+bind to `0.0.0.0` and firewall the port.
+
+**Starting at boot.** Docker restarts the container itself
+(`restart: always`). Rootless Podman has no daemon, so enable the
+user's restart service and lingering once:
+`systemctl --user enable podman-restart.service` and
+`sudo loginctl enable-linger $USER`.
+
 ## Your data
 
 ### Where it is
@@ -158,7 +281,9 @@ This creates `/path/to/backups/<timestamp>/`, containing:
   and then checked with `PRAGMA integrity_check`.
 - `<email>.csv`: a CSV export for every account.
 
-Keep copies somewhere other than the machine running the app.
+In a container, write backups under `/data` (for example `/data/backups`) so
+they land on the host, then copy them off the machine. Keep copies somewhere
+other than the machine running the app.
 
 ### Restore
 

@@ -1,0 +1,12 @@
+.git
+node_modules
+.wrangler
+.dev.vars
+data
+test
+docs
+ansible
+*.md
+.env
+compose.yaml
+Dockerfile

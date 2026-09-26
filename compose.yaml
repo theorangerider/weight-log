@@ -1,0 +1,42 @@
+# Self-hosted Weight Log for Docker Compose or podman-compose.
+#   docker compose up --build        (or: podman-compose up --build)
+# then open http://127.0.0.1:8080. See docs/self-hosting.md.
+#
+# Settings come from ONE optional env file: `.env` next to this file, or the
+# file named by WEIGHT_LOG_ENV_FILE. It holds both the WEIGHT_LOG_* values
+# used below and app settings (AUTH, ALLOW_REGISTRATION, ALLOWED_HOSTS, ...)
+# passed to the container. With no file, the app's own defaults apply.
+name: weight-log
+
+services:
+  weight-log:
+    build: .
+    # Pin a tag (or point at a registry image) to control upgrades.
+    image: ${WEIGHT_LOG_IMAGE:-weight-log:local}
+    # "always" (not unless-stopped): rootless Podman's boot service
+    # (podman-restart) only starts containers with this policy.
+    restart: always
+    user: "${WEIGHT_LOG_UID:-1000}:${WEIGHT_LOG_GID:-1000}"
+    ports:
+      # Host address and port. 127.0.0.1 = this machine only; use the
+      # server's Tailscale or LAN IP to expose it there.
+      - "${WEIGHT_LOG_BIND:-127.0.0.1}:${WEIGHT_LOG_PORT:-8080}:8080"
+    volumes:
+      # A named volume by default; set WEIGHT_LOG_DATA to a host directory
+      # (e.g. /srv/weight-log-data) to bind-mount it instead.
+      - ${WEIGHT_LOG_DATA:-weight-log-data}:/data
+    env_file:
+      - path: ${WEIGHT_LOG_ENV_FILE:-.env}
+        required: false
+    # Repeats the Dockerfile's HEALTHCHECK: Podman drops that when building
+    # OCI-format images.
+    healthcheck:
+      test: ["CMD", "node", "server/healthcheck.js"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    stop_grace_period: 15s
+
+volumes:
+  weight-log-data:
