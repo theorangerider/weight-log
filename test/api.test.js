@@ -96,6 +96,47 @@ for (const target of targets) {
       assert.deepEqual((await c("GET", "/api/weights")).data.weights.map((e) => e.weight), [100, 200]);
     });
 
+    test("create, read, update and delete entries, with comments", async () => {
+      const c = await signedIn("crud@example.com");
+      const list = async () => (await c("GET", "/api/weights")).data.weights;
+
+      assert.deepEqual(await list(), []);
+      assert.equal((await c("PUT", "/api/weight", { date: "2024-03-02", weight: 180.26, rung: 12, flag: true })).status, 200);
+      assert.equal((await c("PUT", "/api/weight", { date: "2024-03-01", weight: "181", comment: "  first  " })).status, 200);
+      assert.equal((await c("PUT", "/api/weight", { date: "2024-03-03", weight: null, comment: "In Iceland" })).status, 200);
+      assert.deepEqual(await list(), [
+        { date: "2024-03-01", weight: 181, comment: "first", rung: null, flag: false },
+        { date: "2024-03-02", weight: 180.26, comment: null, rung: 12, flag: true },
+        { date: "2024-03-03", weight: null, comment: "In Iceland", rung: null, flag: false },
+      ]);
+
+      // update overwrites every field
+      await c("PUT", "/api/weight", { date: "2024-03-01", weight: 179.5, comment: null });
+      assert.deepEqual((await list())[0], { date: "2024-03-01", weight: 179.5, comment: null, rung: null, flag: false });
+
+      // clearing both weight and comment deletes the row
+      const del = await c("PUT", "/api/weight", { date: "2024-03-03", weight: "", comment: "" });
+      assert.deepEqual(del.data, { ok: true, deleted: true });
+      assert.deepEqual((await list()).map((e) => e.date), ["2024-03-01", "2024-03-02"]);
+
+      // validation
+      assert.equal((await c("PUT", "/api/weight", { date: "2024-3-1", weight: 100 })).status, 400);
+      assert.equal((await c("PUT", "/api/weight", { date: "2024-03-04", weight: 1501 })).status, 400);
+      assert.equal((await c("PUT", "/api/weight", { date: "2024-03-04", weight: -1 })).status, 400);
+      assert.equal((await c("PUT", "/api/weight", { date: "2024-03-04", comment: "x".repeat(4097) })).status, 400);
+      assert.equal((await c("PUT", "/api/weight", { date: "2024-03-04", rung: 49 })).status, 400);
+      assert.equal((await list()).length, 2);
+    });
+
+    test("users only see their own entries", async () => {
+      const a = await signedIn("alice@example.com");
+      const b = await signedIn("bob@example.com");
+      await a("PUT", "/api/weight", { date: "2024-01-01", weight: 150 });
+      assert.deepEqual((await b("GET", "/api/weights")).data.weights, []);
+      await b("PUT", "/api/weight", { date: "2024-01-01", weight: 200 });
+      assert.equal((await a("GET", "/api/weights")).data.weights[0].weight, 150);
+    });
+
     test("cross-origin writes are rejected, same-origin allowed", async () => {
       const c = await signedIn("origin@example.com");
       const evil = await c("PUT", "/api/weight", { date: "2024-01-01", weight: 1 }, { Origin: "https://evil.example" });
