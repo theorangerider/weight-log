@@ -10,3 +10,4 @@ ansible
 .env
 compose.yaml
 Dockerfile
+dist

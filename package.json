@@ -9,6 +9,7 @@
     "deploy": "wrangler deploy",
     "dev:node": "ALLOW_REGISTRATION=true node --watch server/main.js",
     "start": "node server/main.js",
+    "image": "sh scripts/build-image.sh",
     "user": "node server/cli.js",
     "test": "node --test test/*.test.js"
   },

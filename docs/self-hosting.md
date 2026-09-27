@@ -222,10 +222,38 @@ docker compose exec -T weight-log node server/cli.js export-csv you@example.com 
 With Podman, use `podman exec -it weight-log_weight-log_1 ...`, or
 `podman-compose exec`.
 
+### Release bundles (deploying without a registry)
+
+```bash
+npm run image      # builds from the committed HEAD
+```
+
+This writes `dist/weight-log-<commit>/`, which contains everything a server
+needs. No source tree or registry is required:
+
+- `image.tar.gz`: the image, `localhost/weight-log:<commit>`
+- `compose.yaml`: the same file as in the repo
+- `release.env`: `WEIGHT_LOG_VERSION` and `WEIGHT_LOG_IMAGE`
+
+To run it on a server by hand (a deployment tool such as Ansible does the
+same steps):
+
+```bash
+docker load -i image.tar.gz
+# settings.env: WEIGHT_LOG_IMAGE from release.env, WEIGHT_LOG_ENV_FILE pointing
+# at settings.env itself, plus WEIGHT_LOG_BIND/PORT/DATA and app settings
+docker compose -f compose.yaml --env-file settings.env up -d --no-build --force-recreate
+```
+
+`--no-build` matters, because the server has no source to build from.
+`--force-recreate` matters for podman-compose, which otherwise never
+replaces a running container. This was tested with Docker CLI 26.1 and Docker
+Compose 2.26, and with podman-compose 1.3.
+
 **Using a registry later.** The image is self-contained, so you can build it
 anywhere (a workstation, CI), push it, and set `WEIGHT_LOG_IMAGE` to the
-registry name. Then use `pull` and `up -d` instead of `--build`. Nothing else
-changes.
+registry name. Then use `pull` and `up -d` instead of loading a bundle.
+Nothing else changes.
 
 **Tailscale / LAN access.** Tailscale runs on the host, not in the container.
 Publish the port on the host's Tailscale IP (`WEIGHT_LOG_BIND=100.x.y.z`) so
