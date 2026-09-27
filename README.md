@@ -43,6 +43,7 @@ requests.
 npm install
 npx wrangler dev        # local, uses a local D1 copy
 npx wrangler deploy
+npm test
 ```
 
 Schema changes: edit [schema.sql](schema.sql) (idempotent) and run
