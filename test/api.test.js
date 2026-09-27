@@ -2,7 +2,11 @@
 // targets.js, so storage implementations cannot drift apart.
 import { describe, test, before, after } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { buildTrendSeries } from "../public/trend.js";
 import { targets } from "./targets.js";
+
+const hdoCSV = readFileSync(new URL("./fixtures/hdo-export.csv", import.meta.url), "utf8");
 
 for (const target of targets) {
   describe(target.name, () => {
@@ -135,6 +139,62 @@ for (const target of targets) {
       assert.deepEqual((await b("GET", "/api/weights")).data.weights, []);
       await b("PUT", "/api/weight", { date: "2024-01-01", weight: 200 });
       assert.equal((await a("GET", "/api/weights")).data.weights[0].weight, 150);
+    });
+
+    test("Hacker's Diet Online CSV import", async () => {
+      const c = await signedIn("hdo@example.com");
+      await c("PUT", "/api/weight", { date: "2023-01-05", weight: 999, comment: "to be overwritten" });
+      const r = await c("POST", "/api/import", { csv: hdoCSV });
+      assert.equal(r.status, 200, r.text);
+      assert.deepEqual(r.data, { ok: true, imported: 51, skipped: 8, plan: false });
+
+      const byDate = new Map((await c("GET", "/api/weights")).data.weights.map((e) => [e.date, e]));
+      assert.equal(byDate.size, 51);
+      assert.deepEqual(byDate.get("2023-01-01"), { date: "2023-01-01", weight: 185, comment: null, rung: 12, flag: false });
+      assert.equal(byDate.has("2023-01-04"), false, "blank HDO day is skipped");
+      assert.deepEqual(byDate.get("2023-01-13"), { date: "2023-01-13", weight: null, comment: "Travel day, no scale", rung: null, flag: false });
+      const pizza = byDate.get("2023-01-21");
+      assert.deepEqual([pizza.comment, pizza.rung, pizza.flag], ['Pizza night, "big" slices', 14, true]);
+      assert.notEqual(byDate.get("2023-01-05").weight, 999, "import overwrites existing dates");
+      assert.equal(byDate.get("2023-01-05").comment, null);
+      assert.ok(byDate.has("2023-02-28"), "second month block is read");
+
+      assert.equal((await c("POST", "/api/import", { csv: "Date,Weight\nnothing here\n" })).status, 400);
+      assert.equal((await c("POST", "/api/import", { nope: true })).status, 400);
+    });
+
+    test("CSV export, and export -> import round trip", async () => {
+      const c = await signedIn("export@example.com");
+      await c("PUT", "/api/weight", { date: "2024-05-01", weight: 200 });
+      await c("PUT", "/api/weight", { date: "2024-05-03", weight: 190, comment: 'said "hi", then left' });
+      await c("PUT", "/api/weight", { date: "2024-05-04", weight: null, comment: "multi\nline" });
+
+      const r = await c("GET", "/api/export.csv");
+      assert.equal(r.status, 200);
+      assert.equal(r.headers.get("Content-Type"), "text/csv; charset=utf-8");
+      assert.match(r.headers.get("Content-Disposition"), /attachment; filename="weight-log.csv"/);
+      const entries = (await c("GET", "/api/weights")).data.weights;
+      const trend = buildTrendSeries(entries, "2024-05-04");
+      assert.equal(
+        r.text,
+        [
+          "Date,Weight (lb),Trend (lb),Rung,Flag,Comment",
+          `2024-05-01,200,${trend.get("2024-05-01").toFixed(2)},,0,`,
+          `2024-05-03,190,${trend.get("2024-05-03").toFixed(2)},,0,"said ""hi"", then left"`,
+          `2024-05-04,,${trend.get("2024-05-04").toFixed(2)},,0,"multi\nline"`,
+          "",
+        ].join("\r\n")
+      );
+      assert.equal(trend.get("2024-05-03"), 199);
+
+      // Re-import our own export into a fresh account. (Comments containing
+      // newlines are split by the line-based importer; everything else
+      // round-trips.)
+      const d = await signedIn("reimport@example.com");
+      const imp = await d("POST", "/api/import", { csv: r.text });
+      assert.equal(imp.data.imported, 3);
+      const again = (await d("GET", "/api/weights")).data.weights;
+      assert.deepEqual(again.slice(0, 2), entries.slice(0, 2));
     });
 
     test("cross-origin writes are rejected, same-origin allowed", async () => {
