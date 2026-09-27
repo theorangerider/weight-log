@@ -1,7 +1,9 @@
 // Hacker's Diet trend math (public/trend.js). These tests pin down the
-// existing behavior.
+// existing behavior; trend-golden.json was captured from the upstream
+// implementation before any self-hosting work, so any drift fails here.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { buildTrendSeries, fitSlope } from "../public/trend.js";
 
 // Equal to within 1e-9: floating point makes e.g. 180 - 197.1 come out as
@@ -119,4 +121,15 @@ test("fitSlope is the slope of the best-fitting straight line", () => {
   // fitSlope uses Hacker's Diet Online's running-sum form of the same formula,
   // so this checks the two agree on uneven data.
   assertNear(fitSlope([200, 199, 199, 197.1]), -0.87);
+});
+
+test("golden fixture captured from the upstream implementation still matches", () => {
+  const golden = JSON.parse(readFileSync(new URL("./fixtures/trend-golden.json", import.meta.url), "utf8"));
+  const series = [...buildTrendSeries(golden.entries, golden.endDate)];
+  assert.equal(series.length, golden.series.length);
+  for (let i = 0; i < series.length; i++) {
+    assert.equal(series[i][0], golden.series[i][0]);
+    assertNear(series[i][1], golden.series[i][1], series[i][0]);
+  }
+  assertNear(fitSlope(series.map(([, v]) => v)), golden.slope, "slope");
 });
