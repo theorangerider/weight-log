@@ -1,5 +1,5 @@
 import {
-  buildTrendSeries, fitSlope, parseDate, toISO,
+  buildTrendSeries, parseDate, toISO,
   KCAL_PER_UNIT, planWeightOn, planEndDate, analyseTrend, intervalStart, bodyMassIndex,
 } from "./trend.js?v=4";
 
@@ -759,10 +759,12 @@ function renderStats({ dates, trend, byDate, weightsByDate }) {
   let cells = "";
 
   if (lastLogged) {
-    // slope: least-squares fit over daily trend values through the last logged day,
-    // exactly as Hacker's Diet Online does.
-    const fitValues = dates.filter((d) => d <= lastLogged && trend.has(d)).map((d) => trend.get(d));
-    const slope = fitSlope(fitValues);
+    // slope: least-squares fit over the daily trend for the week ending on the
+    // last logged day (HDO's "week": 8 days inclusive, as on the Trend tab), the
+    // rate Hacker's Diet Online's default view shows, rather than the whole
+    // month. Local change in this fork; see johnchampaign/weight-log#2.
+    const [week] = analyseTrend(trend, [[intervalStart(lastLogged, 7), lastLogged]]);
+    const slope = week ? week.slope : null;
 
     const entriesCount = dates.filter((d) => weightsByDate.has(d)).length;
     const endTrend = trend.get(lastLogged);
@@ -773,7 +775,7 @@ function renderStats({ dates, trend, byDate, weightsByDate }) {
     if (slope !== null) {
       const weekly = slope * 7;
       const sign = weekly > 0 ? "+" : "";
-      cells += statCell("Rate", `${sign}${fmtDelta(weekly, 2)} ${dispBase()}/week`, weekly);
+      cells += statCell("Rate (last week)", `${sign}${fmtDelta(weekly, 2)} ${dispBase()}/week`, weekly);
       const kcal = slope * KCAL_PER_UNIT[unit];
       cells += statCell(
         `${energyWord()} ${kcal <= 0 ? "deficit" : "excess"}`,
