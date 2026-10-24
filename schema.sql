@@ -19,7 +19,10 @@ CREATE TABLE IF NOT EXISTS users (
   plan_calorie_balance INTEGER,
   plan_show INTEGER NOT NULL DEFAULT 1,
   -- Height for body mass index; NULL = not set (BMI hidden).
-  height_cm REAL
+  height_cm REAL,
+  -- Log tab display: "Entries this month" stat; day-of-week column on phones.
+  show_entry_count INTEGER NOT NULL DEFAULT 1,
+  mobile_weekday INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS sessions (

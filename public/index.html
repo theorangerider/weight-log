@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Weight Log</title>
-<link rel="stylesheet" href="style.css?v=13">
+<link rel="stylesheet" href="style.css?v=14">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#9878;&#65039;</text></svg>">
 </head>
 <body>
@@ -242,6 +242,18 @@
       </div>
 
       <div class="panel">
+        <h2>Log tab</h2>
+        <form id="log-display-form" class="plan-form">
+          <label class="check"><input type="checkbox" id="show-entry-count"> Show "Entries this month"</label>
+          <label class="check"><input type="checkbox" id="mobile-weekday"> Show the day of the week on mobile</label>
+          <div class="form-buttons">
+            <button type="submit" class="primary">Save</button>
+            <span id="log-display-status" class="muted small" role="status"></span>
+          </div>
+        </form>
+      </div>
+
+      <div class="panel">
         <h2>Height</h2>
         <p class="muted small">Used only to show your body mass index (BMI) on the Log and Chart tabs. Enter either
         centimetres or feet and inches; leave both blank to hide BMI.</p>
@@ -297,6 +309,6 @@
   <a href="https://www.fourmilab.ch/hackdiet/" target="_blank" rel="noopener">John Walker's Hacker's Diet</a>.</p>
 </footer>
 
-<script type="module" src="app.js?v=15"></script>
+<script type="module" src="app.js?v=16"></script>
 </body>
 </html>

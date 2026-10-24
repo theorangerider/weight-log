@@ -100,6 +100,16 @@ for (const target of targets) {
       assert.deepEqual((await c("GET", "/api/weights")).data.weights.map((e) => e.weight), [100, 200]);
     });
 
+    test("Log tab display settings default to the old layout and save as booleans", async () => {
+      const c = await signedIn("display@example.com");
+      const fields = (r) => pick(r.data, "showEntryCount", "mobileWeekday");
+      assert.deepEqual(fields(await c("GET", "/api/me")), { showEntryCount: true, mobileWeekday: false });
+      assert.equal((await c("PUT", "/api/settings", { mobileWeekday: "yes" })).status, 400);
+      const saved = await c("PUT", "/api/settings", { showEntryCount: false, mobileWeekday: true });
+      assert.deepEqual(fields(saved), { showEntryCount: false, mobileWeekday: true });
+      assert.deepEqual(fields(await c("GET", "/api/me")), { showEntryCount: false, mobileWeekday: true });
+    });
+
     test("create, read, update and delete entries, with comments", async () => {
       const c = await signedIn("crud@example.com");
       const list = async () => (await c("GET", "/api/weights")).data.weights;

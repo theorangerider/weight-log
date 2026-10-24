@@ -135,7 +135,7 @@ async function authenticate(request, env) {
   const row = await env.DB.prepare(
     `SELECT u.id, u.email, u.unit, u.plan_start_date, u.plan_start_weight, u.plan_goal_weight,
             u.plan_calorie_balance, u.plan_show, u.height_cm, u.display_unit, u.energy_unit,
-            u.decimal_char, u.first_name, u.middle_name, u.last_name
+            u.decimal_char, u.first_name, u.middle_name, u.last_name, u.show_entry_count, u.mobile_weekday
      FROM sessions s JOIN users u ON u.id = s.user_id
      WHERE s.token_hash = ? AND s.expires_at > ?`
   ).bind(tokenHash, Date.now()).first();
@@ -270,6 +270,8 @@ function profileOf(user) {
     middleName: user.middle_name || "",
     lastName: user.last_name || "",
     heightCm: user.height_cm,
+    showEntryCount: user.show_entry_count !== 0,
+    mobileWeekday: !!user.mobile_weekday,
     plan: planOf(user),
   };
 }
@@ -312,6 +314,12 @@ async function saveSettings(request, env, user) {
     }
     set("height_cm", heightCm);
   }
+  for (const [key, col] of [["showEntryCount", "show_entry_count"], ["mobileWeekday", "mobile_weekday"]]) {
+    if (body[key] !== undefined) {
+      if (typeof body[key] !== "boolean") return json({ error: `${key} must be true or false` }, 400);
+      set(col, body[key] ? 1 : 0);
+    }
+  }
 
   const statements = [];
   if (body.logUnit !== undefined) {
@@ -337,7 +345,8 @@ async function saveSettings(request, env, user) {
 
   const fresh = await env.DB.prepare(
     `SELECT id, email, unit, plan_start_date, plan_start_weight, plan_goal_weight, plan_calorie_balance,
-            plan_show, height_cm, display_unit, energy_unit, decimal_char, first_name, middle_name, last_name
+            plan_show, height_cm, display_unit, energy_unit, decimal_char, first_name, middle_name, last_name,
+            show_entry_count, mobile_weekday
      FROM users WHERE id = ?`
   ).bind(user.id).first();
   return json(profileOf(fresh));

@@ -12,6 +12,7 @@ const state = {
   plan: null,         // {startDate, startWeight, goalWeight, calorieBalance, show}
   customRange: null,  // {from, to} for the Trend tab
   heightCm: null,     // for BMI; null = not set
+  logDisplay: { showEntryCount: true, mobileWeekday: false },
   chartPeriod: { period: "q" },  // Chart tab: m/q/h/y, or {period: "c", from, to}
 };
 
@@ -173,6 +174,8 @@ function applyProfile(me) {
   state.email = me.email;
   state.plan = me.plan;
   state.heightCm = me.heightCm ?? null;
+  state.logDisplay = { showEntryCount: me.showEntryCount !== false, mobileWeekday: !!me.mobileWeekday };
+  $("#log-table").classList.toggle("mobile-weekday", state.logDisplay.mobileWeekday);
   state.units = {
     store: me.unit,
     log: me.logUnit,
@@ -770,7 +773,7 @@ function renderStats({ dates, trend, byDate, weightsByDate }) {
     const endTrend = trend.get(lastLogged);
 
     cells += statCell("Trend now", fmtW(endTrend, { unit: true }));
-    cells += statCell("Entries this month", String(entriesCount));
+    if (state.logDisplay.showEntryCount) cells += statCell("Entries this month", String(entriesCount));
 
     if (slope !== null) {
       const weekly = slope * 7;
@@ -826,6 +829,9 @@ function fillSettingsForms() {
   pick("energy-unit", u.energy);
   pick("decimal-char", u.dec);
   $("#units-status").textContent = "";
+  $("#show-entry-count").checked = state.logDisplay.showEntryCount;
+  $("#mobile-weekday").checked = state.logDisplay.mobileWeekday;
+  $("#log-display-status").textContent = "";
   fillHeightForm();
   $("#name-first").value = p.firstName;
   $("#name-middle").value = p.middleName;
@@ -870,6 +876,14 @@ $("#units-form").addEventListener("submit", async (e) => {
     changes.logUnit = logUnit;
   }
   await saveSettings(changes, $("#units-status"), "Saved.");
+});
+
+$("#log-display-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  await saveSettings({
+    showEntryCount: $("#show-entry-count").checked,
+    mobileWeekday: $("#mobile-weekday").checked,
+  }, $("#log-display-status"), "Saved.");
 });
 
 const CM_PER_IN = 2.54;
